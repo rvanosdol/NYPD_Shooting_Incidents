@@ -1,0 +1,169 @@
+---
+title: "NYPD Shooting Incident Data (Historic)"
+date: "2024-04-13"
+output: 
+  pdf_document: default
+  html_document: default
+---
+
+# Introduction
+
+Gun violence is a significant concern in urban areas, and understanding the patterns and trends of shooting incidents is crucial for effective law enforcement and public safety measures. In this analysis, I explored the NYPD Shooting Incident data set to gain insights into the characteristics and locations of shooting incidents in New York City. Specifically, I aimed to answer the following questions: What are the temporal trends in shooting incidents in New York City, and how do they vary by borough?
+
+# Description of Columns in the Dataset
+
+1. **INCIDENT_KEY**: A unique identifier for each shooting incident.
+2. **OCCUR_DATE**: The date when the shooting incident occurred.
+3. **OCCUR_TIME**: The time when the shooting incident occurred.
+4. **BORO**: The borough (administrative region) in which the shooting incident occurred (e.g., Manhattan, Brooklyn, Queens, Bronx, Staten Island).
+5. **LOC_OF_OCCUR_DESC**: Description of the location of the shooting incident.
+6. **PRECINCT**: The precinct number associated with the location of the shooting incident.
+7. **JURISDICTION_CODE**: Code indicating the jurisdiction of the shooting incident.
+8. **LOC_CLASSFCTN_DESC**: Description of the classification of the location.
+9. **LOCATION_DESC**: Additional description of the location of the shooting incident.
+10. **STATISTICAL_MURDER_FLAG**: Flag indicating whether the shooting incident resulted in a statistical murder.
+11. **PERP_AGE_GROUP**: Age group of the suspect involved in the shooting incident.
+12. **PERP_SEX**: Gender of the suspect involved in the shooting incident.
+13. **PERP_RACE**: Race or ethnicity of the suspect involved in the shooting incident.
+14. **VIC_AGE_GROUP**: Age group of the victim(s) involved in the shooting incident.
+15. **VIC_SEX**: Gender of the victim(s) involved in the shooting incident.
+16. **VIC_RACE**: Race or ethnicity of the victim(s) involved in the shooting incident.
+17. **X_COORD_CD**: X-coordinate of the location where the shooting incident occurred (map coordinate).
+18. **Y_COORD_CD**: Y-coordinate of the location where the shooting incident occurred (map coordinate).
+19. **Latitude**: Latitude of the location where the shooting incident occurred.
+20. **Longitude**: Longitude of the location where the shooting incident occurred.
+21. **Lon_Lat**: Combined longitude and latitude coordinates of the location where the shooting incident occurred.
+
+# Libraries
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(sf)
+library(leaflet)
+library(osmdata)
+```
+
+# Import Data and Print Summary
+
+```{r}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+dat <- read.csv(url)
+summary(dat)
+```
+
+# Clean Data
+
+```{r}
+# Convert OCCUR_DATE to Date format
+dat$OCCUR_DATE <- as.Date(dat$OCCUR_DATE, format = "%m/%d/%Y")
+
+# Remove unnecessary columns
+dat <- dat %>%
+  select(-c(INCIDENT_KEY, OCCUR_TIME, LOC_OF_OCCUR_DESC, PRECINCT, JURISDICTION_CODE, LOC_CLASSFCTN_DESC, LOCATION_DESC, STATISTICAL_MURDER_FLAG, PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE, X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat))
+
+# Check for missing data
+missing_data <- colSums(is.na(dat))
+print(missing_data)
+```
+There is no need to handle missing data as there is none (at least not in the data columns of interest).  
+
+# Analysis 
+
+## Frequency of shooting incidents over time
+```{r}
+# Plot frequency of shooting incidents over time
+ggplot(dat, aes(x = OCCUR_DATE)) +
+  geom_freqpoly(binwidth = 30) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(title = "Frequency of Shooting Incidents Over Time",
+       x = "Date",
+       y = "Frequency")
+```
+This plot shows the frequency of shooting incidents over time. The y-axis represents the frequency of shooting incidents, which is the count of incidents occurring within each time interval (in this case, within each 30-day bin). Therefore, the y-axis scale is determined by the maximum frequency of incidents within these bins. The data indicates considerable fluctuations in the number of shooting incidents within 30-day intervals. However, discerning any underlying trends may be more feasible if the incidents are aggregated by year rather than segmented into 30-day bins.
+
+```{r}
+# Extract year from OCCUR_DATE
+dat$YEAR <- year(dat$OCCUR_DATE)
+
+# Group total number of incidents by year
+incidents_by_year <- dat %>%
+  group_by(YEAR) %>%
+  summarise(total_incidents = n())
+```
+
+Which years have the largest number of shooting incidents? Which years have the smallest? 
+
+```{r}
+# Sort incidents_by_year dataframe in descending order based on total_incidents
+sorted_years <- incidents_by_year %>% arrange(desc(total_incidents))
+
+# Select the top 3 years with the largest number of incidents
+top_5_years <- head(sorted_years, 5)
+
+# Print the top 3 years with the largest number of incidents
+cat("Top 5 years with the largest number of incidents:\n")
+cat(paste("Year:", top_5_years$YEAR, "\t Number of Incidents:", top_5_years$total_incidents, "\n"))
+
+# Select the bottom 5 years with the smallest number of incidents
+bottom_5_years <- tail(sorted_years, 5)
+
+# Print the bottom 5 years with the smallest number of incidents
+cat("\nBottom 5 years with the smallest number of incidents:\n")
+cat(paste("Year:", bottom_5_years$YEAR, "\t Number of Incidents:", bottom_5_years$total_incidents, "\n"))
+```
+
+```{r}
+# Plot frequency of shooting incidents over time with grid lines for every year
+ggplot(incidents_by_year, aes(x = YEAR, y = total_incidents)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = unique(incidents_by_year$YEAR)) +
+  labs(title = "Frequency of Shooting Incidents Over Time",
+       x = "Year",
+       y = "Total Incidents")
+```
+
+## Summary statistics of shooting incidents by borough
+```{r}
+borough_summary <- dat %>%
+  group_by(BORO) %>%
+  summarise(total_incidents = n())
+print(borough_summary)
+```
+
+```{r}
+# Distribution of shooting incidents by borough
+ggplot(dat, aes(x = BORO)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Distribution of Shooting Incidents by Borough",
+       x = "Borough",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Line scatter plot of shooting incidents by year and borough
+ggplot(dat, aes(x = YEAR, color = BORO, group = BORO)) +
+  geom_line(stat = "count") +
+  geom_point(stat = "count") +
+  labs(title = "Shooting Incidents by Year and Borough",
+       x = "Year",
+       y = "Number of Incidents",
+       color = "Borough") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Conclusion
+The highest recorded number of shooting incidents within a single year is 2055, which occurred in 2006. Subsequently, from 2006 to 2019, there appeared to be a gradual decline in incidents, stabilizing at approximately 968 incidents. Notably, the lowest incidence rates were observed in 2017, 2018, and 2019. However, in 2020, the number of shooting incidents surged back to 1948, maintaining a relatively consistent range (+/- 250) over the following two years. Further analysis is warranted to elucidate the sudden reversal in the downward trend. One plausible explanation could be attributed to adverse economic conditions resulting from the COVID-19 pandemic, although additional investigation is necessary to substantiate this hypothesis. 
+
+In examining shooting incidents by borough, it's evident that Brooklyn consistently registers the highest number of incidents (10933), trailed by the Bronx (7937), Queens, and Manhattan (4094 and 3572, respectively), with Staten Island reporting the lowest (776). Population density could be a potential factor influencing this trend, given Brooklyn's largest population and Staten Island's smallest; however, further analysis is necessary to validate this hypothesis and explore other contributing factors. With the exception of Staten Island, all boroughs exhibit a similar yearly trend to that observed in the initial analysis, suggesting that the underlying conditions impacting the overall trend in shooting incidents affect each borough to a similar extent.
+
+
+# Potential Sources of Bias
+The dataset only includes shooting incidents reported to and recorded by the NYPD. Incidents that were not reported or recorded may be missing from the dataset, leading to a biased sample that may not accurately represent all shooting incidents in New York City. Additionally, there may be biases in the reporting of shooting incidents, leading to underreporting or overreporting of certain types of incidents. For example, incidents in certain neighborhoods or involving certain demographics may be more or less likely to be reported to law enforcement. 
+
+Since this analysis strictly considered only the data and location of shooting incidents, there may not be much room for personal bias, however, any preconceived notions or beliefs about gun violence, law enforcement, or particular demographics may still influence the interpretation of the data. To mitigate the affects of personal bias, I clearly documented the methods and assumptions used in the analysis to make it easier for others to assess the validity of the results.
